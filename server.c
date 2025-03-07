@@ -32,50 +32,61 @@ int main() {
         return -1;
     }
 
-    struct sockaddr_in client_address;
-    unsigned int client_address_len = sizeof(client_address);
+    fd_set read_set;
 
-    int client_file_descriptor = accept(listen_file_descriptor, (struct sockaddr*)&client_address, &client_address_len);
+    FD_ZERO(&read_set);
+    FD_SET(listen_file_descriptor, &read_set);
 
-    if (client_file_descriptor == -1) {
-        perror("accept");
-        return -1;
-    }
+    int max_file_descriptor = listen_file_descriptor;
 
-    char ip[32];
-    printf("Client IP: %s, Port: %d\n", inet_ntop(AF_INET, &client_address.sin_addr.s_addr, ip, sizeof(ip)),
-           ntohs(client_address.sin_port));
-        
     while (1) {
-        char buffer[1024] = {0};
-        int receive_data_len = recv(client_file_descriptor, buffer, sizeof(buffer), 0);
+        fd_set temp_set = read_set;
 
-        if (receive_data_len > 0) {
-            printf("client says before processing: %s\n", buffer);
+        int ret = select(max_file_descriptor + 1, &temp_set, NULL, NULL, NULL);
 
-            for (int i = 0; i < receive_data_len; ++i) {
-                buffer[i] = toupper(buffer[i]);
+        if (FD_ISSET(listen_file_descriptor, &temp_set)) {
+            int communication_file_descriptor = accept(listen_file_descriptor, NULL, NULL);
+
+            FD_SET(communication_file_descriptor, &read_set);
+            max_file_descriptor =
+                communication_file_descriptor > max_file_descriptor ? communication_file_descriptor : max_file_descriptor;
+        }
+
+        for (int file_descriptor = 0; file_descriptor < max_file_descriptor + 1; ++file_descriptor) {
+            if (file_descriptor != listen_file_descriptor && FD_ISSET(file_descriptor, &temp_set)) {
+                char buffer[1024] = {0};
+                int receive_data_len = recv(file_descriptor, buffer, sizeof(buffer), 0);
+        
+                if (receive_data_len > 0) {
+                    printf("client says before processing: %s\n", buffer);
+        
+                    for (int i = 0; i < receive_data_len; ++i) {
+                        buffer[i] = toupper(buffer[i]);
+                    }
+        
+                    printf("client says after processing: %s\n", buffer);
+        
+                    ret = send(file_descriptor, buffer, receive_data_len, 0);
+                    if (ret == -1) {
+                        perror("send");
+                        return -1;
+                    }
+                } else if (receive_data_len == 0) {
+                    printf("client disconnected...\n");
+
+                    FD_CLR(file_descriptor, &read_set);
+                    close(file_descriptor);
+
+                    break;
+                } else {
+                    perror("recv");
+                    return -1;
+                }
             }
-
-            printf("client says after processing: %s\n", buffer);
-
-            ret = send(client_file_descriptor, buffer, receive_data_len, 0);
-            if (ret == -1) {
-                perror("send");
-                return -1;
-            }
-
-        } else if (receive_data_len == 0) {
-            printf("client disconnected...\n");
-            break;
-        } else {
-            perror("recv");
-            return -1;
         }
     }
 
     close(listen_file_descriptor);
-    close(client_file_descriptor);
 
     return 0;
 }
