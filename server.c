@@ -22,10 +22,14 @@ void* accept_connection(void* arg) {
 
     int communication_file_descriptor = accept(file_descriptor_info->file_descriptor, NULL, NULL);
 
+    pthread_mutex_lock(&mutex);
+
     FD_SET(communication_file_descriptor, file_descriptor_info->read_set);
     *file_descriptor_info->max_file_descriptor = communication_file_descriptor > *file_descriptor_info->max_file_descriptor
                                                      ? communication_file_descriptor
                                                      : *file_descriptor_info->max_file_descriptor;
+
+    pthread_mutex_unlock(&mutex);
 
     free(file_descriptor_info);
 
@@ -56,7 +60,12 @@ void* communication(void* arg) {
     } else if (receive_data_len == 0) {
         printf("client disconnected...\n");
 
+        pthread_mutex_lock(&mutex);
+
         FD_CLR(file_descriptor_info->file_descriptor, file_descriptor_info->read_set);
+
+        pthread_mutex_unlock(&mutex);
+
         close(file_descriptor_info->file_descriptor);
     } else {
         perror("recv");
@@ -105,7 +114,11 @@ int main() {
     int max_file_descriptor = listen_file_descriptor;
 
     while (1) {
+        pthread_mutex_lock(&mutex);
+
         fd_set temp_set = read_set;
+
+        pthread_mutex_unlock(&mutex);
 
         int ret = select(max_file_descriptor + 1, &temp_set, NULL, NULL, NULL);
 
