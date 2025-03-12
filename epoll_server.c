@@ -4,6 +4,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/epoll.h>
+#include <fcntl.h>
 
 int main() {
     int listen_file_descriptor = socket(AF_INET, SOCK_STREAM, 0);
@@ -41,7 +42,7 @@ int main() {
 
     struct epoll_event event;
  
-    event.events = EPOLLIN;
+    event.events = EPOLLIN | EPOLLET;
     event.data.fd = listen_file_descriptor;
     epoll_ctl(epoll_file_descriptor, EPOLL_CTL_ADD, listen_file_descriptor, &event);
 
@@ -58,13 +59,21 @@ int main() {
             if (file_descriptor == listen_file_descriptor) {
                 int communication_file_descriptor = accept(listen_file_descriptor, NULL, NULL);
 
-                event.events = EPOLLIN;
+                int flag = fcntl(communication_file_descriptor, F_GETFL);
+                flag |= O_NONBLOCK;
+                fcntl(communication_file_descriptor, F_SETFL, flag);
+
+                event.events = EPOLLIN | EPOLLET;
                 event.data.fd = communication_file_descriptor;
                 epoll_ctl(epoll_file_descriptor, EPOLL_CTL_ADD, communication_file_descriptor, &event);
             } else {
-                char buffer[1024] = {0};
-                int receive_data_len = recv(file_descriptor, buffer, sizeof(buffer), 0);
-        
+                char buffer[5] = {0};
+                int receive_data_len;
+
+                while (1) {
+                    receive_data_len = recv(file_descriptor, buffer, sizeof(buffer), 0);
+                }
+
                 if (receive_data_len > 0) {
                     printf("client says before processing: %s\n", buffer);
         
