@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <sys/epoll.h>
 #include <fcntl.h>
+#include <errno.h>
 
 int main() {
     int listen_file_descriptor = socket(AF_INET, SOCK_STREAM, 0);
@@ -68,38 +69,43 @@ int main() {
                 epoll_ctl(epoll_file_descriptor, EPOLL_CTL_ADD, communication_file_descriptor, &event);
             } else {
                 char buffer[5] = {0};
-                int receive_data_len;
 
                 while (1) {
-                    receive_data_len = recv(file_descriptor, buffer, sizeof(buffer), 0);
-                }
+                    int receive_data_len = recv(file_descriptor, buffer, sizeof(buffer), 0);
 
-                if (receive_data_len > 0) {
-                    printf("client says before processing: %s\n", buffer);
-        
-                    for (int i = 0; i < receive_data_len; ++i) {
-                        buffer[i] = toupper(buffer[i]);
+                    if (receive_data_len > 0) {
+                        printf("client says before processing: %s\n", buffer);
+            
+                        for (int i = 0; i < receive_data_len; ++i) {
+                            buffer[i] = toupper(buffer[i]);
+                        }
+            
+                        printf("client says after processing: %s\n", buffer);
+            
+                        ret = send(file_descriptor, buffer, receive_data_len, 0);
+                        if (ret == -1) {
+                            perror("send");
+                            return -1;
+                        }
+                    } else if (receive_data_len == 0) {
+                        printf("client disconnected...\n");
+    
+                        // delete first and then close
+                        epoll_ctl(epoll_file_descriptor, EPOLL_CTL_DEL, file_descriptor, NULL);
+    
+                        close(file_descriptor);
+    
+                        break;
+                    } else {
+                        if (errno == EAGAIN) {
+                            printf("data received completed...\n");
+                            break;
+                        } else {
+                            perror("recv");
+
+                            return -1;
+                        }
                     }
-        
-                    printf("client says after processing: %s\n", buffer);
-        
-                    ret = send(file_descriptor, buffer, receive_data_len, 0);
-                    if (ret == -1) {
-                        perror("send");
-                        return -1;
-                    }
-                } else if (receive_data_len == 0) {
-                    printf("client disconnected...\n");
-
-                    // delete first and then close
-                    epoll_ctl(epoll_file_descriptor, EPOLL_CTL_DEL, file_descriptor, NULL);
-
-                    close(file_descriptor);
-
-                    break;
-                } else {
-                    perror("recv");
-                    return -1;
                 }
             }
         }
